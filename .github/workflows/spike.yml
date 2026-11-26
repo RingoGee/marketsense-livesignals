@@ -1,0 +1,31 @@
+name: L0 source spike
+# Tests every source from a GitHub-hosted runner (US datacenter IP) — the place the scanner will run.
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "15 5 * * 1-5"    # 10:45 IST, Indian market hours
+    - cron: "30 15 * * 1-5"   # 21:00 IST, US market hours
+permissions:
+  contents: read
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Run spike
+        env:
+          SEC_UA_EMAIL: ${{ secrets.SEC_UA_EMAIL }}
+          FINNHUB_KEY: ${{ secrets.FINNHUB_KEY }}
+          SPIKE_RUNNER: github-actions
+        run: python spike.py
+      - name: Show report in the run summary
+        run: cat report/*.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spike-report
+          path: report/
