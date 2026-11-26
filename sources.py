@@ -9,6 +9,7 @@ Each entry is tested by spike.py (L0). Fields:
   tz       timezone of naive timestamps in the payload (IST or UTC)
   session  "nse" → warm NSE cookies first; "bse" → BSE referer headers
   needs    env var that must be set for the source to run (else "skipped: needs X")
+  disabled reason string; the source stays listed for the record but is never polled
 """
 
 SOURCES = [
@@ -21,23 +22,24 @@ SOURCES = [
     dict(name="bse_notices_rss", group="core", market="IN", kind="rss", tz="IST",
          url="https://www.bseindia.com/data/xml/notices.xml"),
     dict(name="bse_api_announcements", group="core", market="IN", kind="json", session="bse", tz="IST",
+         disabled="403 Access Denied everywhere; BSE RSS replaces it",
          url="https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w?pageno=1&strCat=-1"
              "&strPrevDate={ymd}&strScrip=&strSearch=P&strToDate={ymd}&strType=C&subcategory=-1"),
-    dict(name="nse_announcements", group="core", market="IN", kind="json", session="nse", tz="IST",
+    dict(name="nse_announcements", group="core", market="IN", kind="json", session="nse", disabled="NSE blocks GitHub runners (403); owner chose to skip NSE, 27 Nov 2026", tz="IST",
          url="https://www.nseindia.com/api/corporate-announcements?index=equities"),
-    dict(name="nse_board_meetings", group="add3", market="IN", kind="json", session="nse", tz="IST",
+    dict(name="nse_board_meetings", group="add3", market="IN", kind="json", session="nse", disabled="NSE blocks GitHub runners (403); owner chose to skip NSE, 27 Nov 2026", tz="IST",
          url="https://www.nseindia.com/api/corporate-board-meetings?index=equities"),
-    dict(name="nse_insider_pit", group="core", market="IN", kind="json", session="nse", tz="IST",
+    dict(name="nse_insider_pit", group="core", market="IN", kind="json", session="nse", disabled="NSE blocks GitHub runners (403); owner chose to skip NSE, 27 Nov 2026", tz="IST",
          url="https://www.nseindia.com/api/corporates-pit?index=equities"),
-    dict(name="nse_large_deals", group="core", market="IN", kind="json", session="nse", tz="IST",
+    dict(name="nse_large_deals", group="core", market="IN", kind="json", session="nse", disabled="NSE blocks GitHub runners (403); owner chose to skip NSE, 27 Nov 2026", tz="IST",
          url="https://www.nseindia.com/api/snapshot-capital-market-largedeal"),
 
     # ── India: flows and F&O positioning (addition 4, daily) ────────────────
-    dict(name="nse_fii_dii", group="add4", market="IN", kind="json", session="nse", tz="IST",
+    dict(name="nse_fii_dii", group="add4", market="IN", kind="json", session="nse", disabled="NSE blocks GitHub runners (403); owner chose to skip NSE, 27 Nov 2026", tz="IST",
          url="https://www.nseindia.com/api/fiidiiTradeReact"),
-    dict(name="nse_fo_ban", group="add4", market="IN", kind="csv", session="nse", tz="IST",
+    dict(name="nse_fo_ban", group="add4", market="IN", kind="csv", session="nse", disabled="NSE blocks GitHub runners (403); owner chose to skip NSE, 27 Nov 2026", tz="IST",
          url="https://nsearchives.nseindia.com/content/fo/fo_secban.csv"),
-    dict(name="nse_participant_oi", group="add4", market="IN", kind="csv", session="nse", tz="IST",
+    dict(name="nse_participant_oi", group="add4", market="IN", kind="csv", session="nse", disabled="NSE blocks GitHub runners (403); owner chose to skip NSE, 27 Nov 2026", tz="IST",
          url="https://nsearchives.nseindia.com/content/nsccl/fao_participant_oi_{dmy}.csv", prev_day=True),
     dict(name="nsdl_fpi_daily", group="add4", market="IN", kind="html", tz="IST",
          url="https://www.fpi.nsdl.co.in/web/Reports/Latest.aspx"),
@@ -80,6 +82,7 @@ SOURCES = [
 
     # ── US: company press releases (addition 1) ─────────────────────────────
     dict(name="globenewswire_rss", group="add1", market="US", kind="rss",
+         disabled="bot-blocked (403) from both India and GitHub US runners, 26 Nov 2026",
          url="https://www.globenewswire.com/RssFeed/orgclass/1/feedTitle/GlobeNewswire%20-%20News%20about%20Public%20Companies"),
     dict(name="prnewswire_rss", group="add1", market="US", kind="rss",
          url="https://www.prnewswire.com/rss/news-releases-list.rss"),
@@ -94,12 +97,13 @@ SOURCES = [
 
     # ── US: news (corroboration) ────────────────────────────────────────────
     dict(name="yahoo_ticker_rss", group="news", market="US", kind="rss",
+         disabled="rate-limited (429) everywhere; Google News + yfinance cover it",
          url="https://feeds.finance.yahoo.com/rss/2.0/headline?s=AAPL,MSFT,NVDA&region=US&lang=en-US"),
     dict(name="google_news_us", group="news", market="US", kind="rss",
          url="https://news.google.com/rss/search?q=stock+earnings+OR+guidance&hl=en-US&gl=US&ceid=US:en"),
 
     # ── Nightly: universe lists, prices, macro ──────────────────────────────
-    dict(name="nse_equity_list", group="nightly", market="IN", kind="csv", session="nse",
+    dict(name="nse_equity_list", group="nightly", market="IN", kind="csv", session="nse", disabled="NSE blocks GitHub runners (403); owner chose to skip NSE, 27 Nov 2026",
          url="https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"),
     dict(name="sec_company_tickers", group="nightly", market="US", kind="json", session="sec",
          url="https://www.sec.gov/files/company_tickers.json"),

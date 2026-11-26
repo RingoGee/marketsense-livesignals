@@ -35,7 +35,7 @@ HERE = Path(__file__).resolve().parent
 
 
 # ── sessions ────────────────────────────────────────────────────────────────
-def make_sessions():
+def make_sessions(warm_nse=True):
     base = {"User-Agent": BROWSER_UA, "Accept-Language": "en-US,en;q=0.9"}
 
     plain = requests.Session()
@@ -47,10 +47,14 @@ def make_sessions():
 
     nse = requests.Session()
     nse.headers.update({**base, "Referer": "https://www.nseindia.com/", "Accept": "*/*"})
-    nse_warm = None
+    nse_warm = "skipped (all NSE sources disabled)"
     try:
+        if not warm_nse:
+            raise StopIteration
         r = nse.get("https://www.nseindia.com/", timeout=TIMEOUT)
         nse_warm = r.status_code
+    except StopIteration:
+        pass
     except requests.RequestException as e:
         nse_warm = f"error: {type(e).__name__}"
 
@@ -154,6 +158,8 @@ def test_yf(src):
 
 
 def test_source(src, sessions):
+    if src.get("disabled"):
+        return dict(status="disabled", note=src["disabled"])
     if src.get("needs") and not os.environ.get(src["needs"]):
         return dict(status="skipped", note=f"needs {src['needs']}")
     if src["kind"] == "yf":
@@ -237,7 +243,7 @@ def main():
 
     runner = os.environ.get("SPIKE_RUNNER") or ("github-actions" if os.environ.get("GITHUB_ACTIONS")
                                                 else f"local-{platform.node().split('.')[0]}")
-    sessions, meta = make_sessions()
+    sessions, meta = make_sessions(warm_nse=any(s.get("session") == "nse" and not s.get("disabled") for s in chosen))
     started = datetime.now(UTC)
     results = []
     for src in chosen:
