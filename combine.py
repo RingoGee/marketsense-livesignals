@@ -217,9 +217,16 @@ def run(store: Path, ns_doc, fresh, now, log):
     st = _load(store / "state/alerts.json", {})
     today = now.astimezone(IST).strftime("%Y-%m-%d")
     if st.get("day") != today:
-        st = dict(day=today, sent_today=0, last=st.get("last", {}))
+        st = dict(day=today, sent_today=0, last=st.get("last", {}), hello=st.get("hello"))
     last = {k: v for k, v in st.get("last", {}).items()
             if now - datetime.fromisoformat(v) < NEW_NAME_DAYS}
+    if os.environ.get("TG_TOKEN") and os.environ.get("TG_CHAT_ID") and not st.get("hello"):
+        hs = send_telegram("Live Signals connected. You'll get at most 5 alerts a day: big score moves or "
+                           "label changes on your holdings/watchlist, severe events on holdings, and new names "
+                           "crossing ±60 on a filing or rating. " + DISCLAIMER)
+        log(f"L4: telegram hello {hs}")
+        if hs == "sent":
+            st["hello"] = now.isoformat(timespec="seconds")
     fresh_ids = {e["id"] for e in fresh}
     pub = _load(store / "data/alerts.json", [])
     out = []

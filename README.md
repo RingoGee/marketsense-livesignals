@@ -84,3 +84,21 @@ and gaps of ~10 minutes.
 
 `publish.sh` keeps `gh-pages` one rolling commit shared by both jobs. It pushes with
 `--force-with-lease` and retries, and the scan always keeps the nightly files from the published copy.
+
+## L4 combined score and alerts
+`combine.py` runs in every scan: score = F·w1 + N·w2 + M·w3 by horizon (PLAN §5), with labels
+Accumulate / Hold / Trim / Exit, written to `data/combined.json`. Alerts (PLAN §7) go to Telegram,
+at most 1 per stock per 6h and 5 a day. Without the secrets below it runs as a dry run.
+
+**Telegram setup (you; Claude never sees these):**
+1. In Telegram, message **@BotFather** → `/newbot` → choose a name and username → copy the token.
+2. Open your new bot, press **Start** and send it any message.
+3. In a browser open `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy the number after
+   `"chat":{"id":`. That's your chat ID.
+4. Repo → Settings → Secrets and variables → Actions → New repository secret:
+   `TG_TOKEN`, `TG_CHAT_ID`, and optionally `HOLDINGS` and `WATCHLIST` (comma lists such as
+   `HDFCBANK, TCS, AAPL`; a bare Indian symbol means its NSE listing).
+5. The next scan (within 10 min) sends a one-time "Live Signals connected" message.
+
+Holdings and watchlist never appear in the published data or the public Actions logs. Alerts
+about them log as `[private]`, and rate-limit records use a keyed hash of the ticker.
