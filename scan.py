@@ -10,6 +10,8 @@ The store is a plain folder (the gh-pages branch in CI):
     data/health.json             last poll per source: status, items, new, newest age
     data/stats.json              24h mapping + classification stats
     data/nscore.json             L2 News score per ticker (swing / positional / long-term)
+    data/combined.json           L4 combined score + label per liquid ticker, per horizon
+    data/alerts.json             L4 market-wide alerts (holdings/watchlist alerts are never published)
     state/seen.json              dedup keys, kept 8 days
     state/signals.json           90-day ledger of scored events (feeds nscore.json)
     state/gemini.json            Gemini calls used today (free-tier cap)
@@ -35,6 +37,7 @@ from pathlib import Path
 import requests
 
 import classify as cl
+import combine
 import mapping as mp
 import nscore
 from rss import parse_feed
@@ -487,6 +490,13 @@ def main():
     ns = nscore.compute(ledger, now)
     write_json(store / "data/nscore.json", ns)
 
+    # L4: combined score, labels, alert gate, Telegram (never fails the run)
+    try:
+        l4 = combine.run(store, ns, fresh, now, log)
+    except Exception as e:  # noqa: BLE001
+        l4 = dict(note=f"error: {type(e).__name__}: {e}"[:200])
+        log(f"L4 error: {l4['note']}")
+
     seen = {k: v for k, v in seen.items() if v and now - parse_iso(v) < SEEN_KEEP}
     write_json(store / "state/seen.json", seen)
     write_json(store / "data/health.json", health)
@@ -496,7 +506,7 @@ def main():
     stats.update(run_utc=iso(now), new_this_run=len(fresh), events_48h=len(keep),
                  classification=class_stats(arch, now), gemini=dict(gstate, note=gnote),
                  nscore_tickers=len(ns["tickers"]), ledger_rows=len(ledger),
-                 runs=run_log(store, now))
+                 runs=run_log(store, now), l4=l4)
     write_json(store / "data/stats.json", stats)
     if nightly_due(store, now):
         log("nightly: due, requesting a run")

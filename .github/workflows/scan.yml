@@ -39,6 +39,10 @@ jobs:
           FINNHUB_KEY: ${{ secrets.FINNHUB_KEY }}
           GEMINI_KEY: ${{ secrets.GEMINI_KEY }}        # optional; rules-only without it
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}       # optional repo variable; default gemini-flash-lite-latest
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}            # Telegram bot; dry run without it
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          HOLDINGS: ${{ secrets.HOLDINGS }}            # comma list, e.g. "HDFCBANK, TCS.NS, AAPL"; never published
+          WATCHLIST: ${{ secrets.WATCHLIST }}
         run: python scan.py --store store
       - name: Stats in the run summary
         run: |
