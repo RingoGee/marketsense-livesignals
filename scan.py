@@ -498,6 +498,11 @@ def main():
                  nscore_tickers=len(ns["tickers"]), ledger_rows=len(ledger),
                  runs=run_log(store, now))
     write_json(store / "data/stats.json", stats)
+    if nightly_due(store, now):
+        log("nightly: due, requesting a run")
+        if os.environ.get("GITHUB_OUTPUT"):
+            with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                f.write("nightly_due=true\n")
     c24 = stats["classification"]
     log(f"classified 24h: {c24['classified_pct']}% of {c24['mapped_signal']} mapped items; "
         f"N scores for {len(ns['tickers'])} tickers; gemini {gnote}")
@@ -505,6 +510,26 @@ def main():
         f"filings_unmapped_24h={stats['filings']['unmapped_pct']}% "
         f"(n={stats['filings']['total']})  news_with_ticker={stats['news']['mapped_pct']}%")
     return 0
+
+
+NIGHTLY_AT_IST = (3, 30)        # after the US close; both markets' previous day is complete
+NIGHTLY_RETRY = timedelta(hours=3)
+
+
+def nightly_due(store: Path, now):
+    """True once per IST day after 03:30, unless a request is still fresh. GitHub's own cron for
+    nightly.yml is unreliable on this account (PLAN §18), so the scan job starts it."""
+    ist = now.astimezone(IST)
+    if (ist.hour, ist.minute) < NIGHTLY_AT_IST:
+        return False
+    today = ist.strftime("%Y-%m-%d")
+    if load_json(store / "state/nightly.json", {}).get("ist_date") == today:
+        return False
+    req = load_json(store / "state/nightly_request.json", {})
+    if req.get("at") and now - parse_iso(req["at"]) < NIGHTLY_RETRY:
+        return False
+    write_json(store / "state/nightly_request.json", dict(at=iso(now), for_ist_date=today))
+    return True
 
 
 def run_log(store: Path, now):

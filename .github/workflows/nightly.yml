@@ -1,0 +1,38 @@
+name: Nightly (L3 F + M scores)
+# Whole-market Fundamental and Momentum scores + NSDL FPI flows (PLAN §19).
+# Started by scan.yml once a day after 03:30 IST (GitHub's own cron is unreliable on this account,
+# PLAN §18); the schedule below is only a backup.
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 22 * * *"            # 03:30 IST
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Read caches from gh-pages
+        run: git clone -q --depth 1 --branch gh-pages "https://github.com/${{ github.repository }}.git" store || mkdir -p store
+      - name: Score
+        run: python nightly.py --store store --out out
+      - name: Summary
+        run: |
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat out/state/nightly.json >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish to gh-pages
+        run: bash publish.sh out "nightly $(date -u +%Y-%m-%dT%H:%MZ)" overlay
+        env:
+          REPO_URL: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
