@@ -8,11 +8,15 @@ The store is a plain folder (the gh-pages branch in CI):
     data/events.json             last 48h of non-noise events, newest first (dashboard reads this)
     data/archive/YYYY-MM-DD.jsonl every event, by IST publish date (kept 30 days)
     data/health.json             last poll per source: status, items, new, newest age
-    data/stats.json              24h mapping stats (L1 target: < 2% unmapped filings)
+    data/stats.json              24h mapping + classification stats
+    data/nscore.json             L2 News score per ticker (swing / positional / long-term)
     state/seen.json              dedup keys, kept 8 days
+    state/signals.json           90-day ledger of scored events (feeds nscore.json)
+    state/gemini.json            Gemini calls used today (free-tier cap)
     ref/                         cached ticker reference lists
 
-No classification or scoring yet (L2/L3). Secrets come from env only and are never written.
+L2: every new event gets a `cls` (classify.py); N is recomputed each run (nscore.py).
+Secrets come from env only and are never written.
 """
 from __future__ import annotations
 
@@ -29,7 +33,9 @@ from pathlib import Path
 
 import requests
 
+import classify as cl
 import mapping as mp
+import nscore
 from rss import parse_feed
 from sources import SOURCES
 
@@ -60,6 +66,7 @@ PLAN = {
     "pib_rss": ("policy", 60),
     "fed_press_rss": ("policy", 60),
     "bea_rss": ("policy", 60),
+    "crisil_ratings": ("crisil", 60),
 }
 # EDGAR "current" feeds: ask for the most entries allowed per call so a busy 10 minutes isn't cut off.
 URL_OVERRIDE = {"edgar_8k": ("count=40", "count=100"), "edgar_form4": ("count=40", "count=100")}
@@ -76,6 +83,8 @@ NOISE = re.compile(
     r"intimation of (?:cut[- ]off|record) date|change in (?:registrar|rta)|"
     r"reconciliation of share capital|statement of investor complaints|closure of trading window|"
     r"structured digital database", re.I)
+# Classifier rules whose items are pure noise (page templates, law-firm ads, auctions, Hindi PIB copies).
+NOISE_RULES = {"tpl_liveprice", "law_firm", "policy_noise", "non_english"}
 # Kept as signal on purpose: Reg 29(1)/29(2) SAST disclosures (large holders crossing 2%/5%).
 STOP = set("the a an and or of to in on for with at by from is are as its it this that after over amid "
            "shares stock stocks share price market markets says said today news update live".split())
@@ -284,7 +293,35 @@ def h_policy(src, r, ref):
     return out
 
 
-HANDLERS = dict(bse=h_bse, edgar=h_edgar, release=h_release, news=h_news, finnhub=h_finnhub, policy=h_policy)
+CRISIL_DOCS = "https://www.crisilratings.com/mnt/winshare/Ratings/RatingList/RatingDocs/"
+
+
+def h_crisil(src, r, ref):
+    """CRISIL rating actions (JSON behind its rating-rationale page). Most rated firms are unlisted."""
+    out = []
+    now = datetime.now(UTC)
+    for d in (r.json() or {}).get("docs", []):
+        try:
+            day = datetime.strptime(d.get("transDate") or d.get("ratingDate"), "%b %d, %Y").replace(tzinfo=IST)
+        except (TypeError, ValueError):
+            day = None
+        # Date only: today's actions get first-seen time, older ones noon IST of their day.
+        pub = now if day and day.date() == now.astimezone(IST).date() else (day + timedelta(hours=12) if day else None)
+        link = CRISIL_DOCS + d["ratingFileName"] if d.get("ratingFileName") else src["url"]
+        ev = base_event(src, d.get("heading", ""), link, pub, "", "rating", d.get("prId") or d.get("ratingFileName"))
+        name = d.get("companyName", "")
+        t = mp.ticker_from_name(ref, name, "IN")
+        ev["issuer"] = name
+        if t:
+            ev["tickers"] = [tag(t, "IN", "crisil_name", name)]
+            ev["map_status"] = "mapped"
+        else:
+            ev["map_status"] = "unlisted"  # private issuers are the norm here, not a miss
+        out.append(ev)
+    return out
+
+
+HANDLERS = dict(crisil=h_crisil, bse=h_bse, edgar=h_edgar, release=h_release, news=h_news, finnhub=h_finnhub, policy=h_policy)
 
 
 # ── clustering: same story from several sources gets one cluster id ─────────
@@ -343,6 +380,8 @@ def main():
     health = load_json(store / "data/health.json", {})
     seen = load_json(store / "state/seen.json", {})
     events = load_json(store / "data/events.json", [])
+    for e in events:  # events stored before L2 have no classification yet
+        e.setdefault("cls", cl.classify(e))
     by_name = {s["name"]: s for s in SOURCES}
     only = [f for f in args.only.split(",") if f]
 
@@ -403,6 +442,15 @@ def main():
     recent = [e for e in events if now - parse_iso(e["published"]) < timedelta(hours=36)]
     assign_clusters(fresh, recent)
 
+    # L2: classify (rules, then Gemini for what the rules leave unclear), mark pure noise
+    for ev in fresh:
+        ev["cls"] = cl.classify(ev)
+        if ev["cls"]["rule"] in NOISE_RULES:
+            ev["noise"] = True
+    gstate = load_json(store / "state/gemini.json", {})
+    gnote = cl.gemini_classify(fresh, gstate, log)
+    write_json(store / "state/gemini.json", gstate)
+
     # archive every new event under its IST publish date
     by_day = {}
     for ev in fresh:
@@ -424,26 +472,72 @@ def main():
     keep.sort(key=lambda e: e["published"], reverse=True)
     write_json(store / "data/events.json", keep)
 
+    # L2: News score. First L2 run seeds the ledger from the archive.
+    ledger_p = store / "state/signals.json"
+    ledger = load_json(ledger_p, None)
+    if ledger is None:
+        ledger, back = [], archive_events(arch)
+        for ev in back:
+            ev.setdefault("cls", cl.classify(ev))
+        log(f"ledger: seeding from {len(back)} archived events")
+        ledger = nscore.update_ledger(ledger, back, now)
+    ledger = nscore.update_ledger(ledger, fresh, now)
+    write_json(ledger_p, ledger)
+    ns = nscore.compute(ledger, now)
+    write_json(store / "data/nscore.json", ns)
+
     seen = {k: v for k, v in seen.items() if v and now - parse_iso(v) < SEEN_KEEP}
     write_json(store / "state/seen.json", seen)
     write_json(store / "data/health.json", health)
     ref.save()
 
     stats = mapping_stats(arch, now)
-    stats.update(run_utc=iso(now), new_this_run=len(fresh), events_48h=len(keep))
+    stats.update(run_utc=iso(now), new_this_run=len(fresh), events_48h=len(keep),
+                 classification=class_stats(arch, now), gemini=dict(gstate, note=gnote),
+                 nscore_tickers=len(ns["tickers"]), ledger_rows=len(ledger))
     write_json(store / "data/stats.json", stats)
+    c24 = stats["classification"]
+    log(f"classified 24h: {c24['classified_pct']}% of {c24['mapped_signal']} mapped items; "
+        f"N scores for {len(ns['tickers'])} tickers; gemini {gnote}")
     log(f"\nnew={len(fresh)} events_48h={len(keep)} "
         f"filings_unmapped_24h={stats['filings']['unmapped_pct']}% "
         f"(n={stats['filings']['total']})  news_with_ticker={stats['news']['mapped_pct']}%")
     return 0
 
 
+def archive_events(arch: Path, days=3):
+    out = []
+    for p in sorted(arch.glob("*.jsonl"))[-days:]:
+        for line in p.read_text(encoding="utf-8").splitlines():
+            try:
+                out.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return out
+
+
+def class_stats(arch: Path, now):
+    """24h: share of mapped, non-noise items that got a type other than 'unclear', by type and method."""
+    since = now - timedelta(hours=24)
+    by_type, by_method, n, ok = {}, {}, 0, 0
+    for ev in archive_events(arch, 2):
+        if parse_iso(ev.get("fetched") or ev["published"]) < since or ev.get("noise") or not ev.get("tickers"):
+            continue
+        c = ev.get("cls") or cl.classify(ev)
+        n += 1
+        ok += c["type"] != "unclear"
+        by_type[c["type"]] = by_type.get(c["type"], 0) + 1
+        by_method[c["by"]] = by_method.get(c["by"], 0) + 1
+    return dict(mapped_signal=n, classified_pct=round(100 * ok / n, 1) if n else 0.0,
+                by_method=by_method, by_type=dict(sorted(by_type.items(), key=lambda kv: -kv[1])))
+
+
 def mapping_stats(arch: Path, now):
     """24h view. Filings (BSE, EDGAR) carry IDs, so unmapped there is a real miss (target < 2%).
     Releases and news may be about private firms or the market, so only a match rate is reported."""
     since = now - timedelta(hours=24)
-    groups = {"filings": {}, "releases": {}, "news": {}, "policy": {}}
-    gmap = {"filing": "filings", "release": "releases", "news": "news", "policy": "policy"}
+    groups = {"filings": {}, "releases": {}, "news": {}, "policy": {}, "ratings": {}}
+    gmap = {"filing": "filings", "release": "releases", "news": "news", "policy": "policy", "rating": "ratings"}
     per_source = {}
     for p in sorted(arch.glob("*.jsonl"))[-3:]:
         for line in p.read_text(encoding="utf-8").splitlines():

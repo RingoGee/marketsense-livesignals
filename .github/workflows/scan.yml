@@ -1,5 +1,5 @@
-name: L1 scan
-# Polls the sources, maps items to tickers, dedups, and writes JSON to the gh-pages branch.
+name: Scan (L1 ingest + L2 classify)
+# Polls the sources, maps items to tickers, dedups, classifies, scores N, and writes JSON to gh-pages.
 # gh-pages is force-pushed as one rolling commit each run, so history never grows.
 on:
   workflow_dispatch: {}
@@ -33,6 +33,8 @@ jobs:
         env:
           SEC_UA_EMAIL: ${{ secrets.SEC_UA_EMAIL }}
           FINNHUB_KEY: ${{ secrets.FINNHUB_KEY }}
+          GEMINI_KEY: ${{ secrets.GEMINI_KEY }}        # optional; rules-only without it
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}       # optional repo variable; default gemini-flash-lite-latest
         run: python scan.py --store store
       - name: Stats in the run summary
         run: |

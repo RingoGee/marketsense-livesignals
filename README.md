@@ -32,3 +32,14 @@ python scan.py --store store --all     # local run, every source
 Outputs: `store/data/events.json`, `data/archive/*.jsonl`, `data/health.json`, `data/stats.json`.
 Secrets (`SEC_UA_EMAIL`, `FINNHUB_KEY`) are read from the environment only and never written.
 See PLAN-live-signals.md §16.
+
+## L2 classification and News score
+Each new event gets a `cls` (`classify.py`): type, direction, size, confidence and the rule that
+fired. Rules handle almost everything; items they can't place go to Gemini's free tier in one
+batched call per run, only if the `GEMINI_KEY` secret exists (model: repo variable `GEMINI_MODEL`,
+default `gemini-flash-lite-latest`). `nscore.py` turns the last 90 days of scored events into a
+News score per stock for swing, positional and long-term horizons.
+
+New outputs: `data/nscore.json` (N per ticker with its top three events), `state/signals.json`
+(90-day ledger), `state/gemini.json` (calls used today), and a `classification` block in
+`stats.json`. Hand-check: `report/l2-handcheck-2026-11-27.md`. See PLAN-live-signals.md §17.

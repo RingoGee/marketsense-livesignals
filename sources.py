@@ -49,16 +49,19 @@ SOURCES = [
     dict(name="rbi_press_rss", group="policy", market="IN", kind="rss", tz="IST",
          url="https://www.rbi.org.in/pressreleases_rss.xml"),
     dict(name="pib_rss", group="policy", market="IN", kind="rss", tz="IST",
-         url="https://pib.gov.in/RssMain.aspx?ModId=6&Lang=1&Regid=3"),
+         url="https://pib.gov.in/RssMain.aspx?ModId=6&Lang=1&Regid=3"),  # serves Hindi whatever Lang says; classifier drops it
 
     # ── India: rating agencies (addition 2) ─────────────────────────────────
-    dict(name="crisil_ratings", group="add2", market="IN", kind="html",
-         url="https://www.crisilratings.com/en/home/our-business/ratings/rating-rationale.html"),
-    dict(name="icra_ratings", group="add2", market="IN", kind="html",
+    # The rationale page loads its list from this JSON (found 27 Nov 2026); 50 rows ≈ 1.5 days of actions.
+    dict(name="crisil_ratings", group="add2", market="IN", kind="json", tz="IST",
+         url="https://www.crisilratings.com/bin/crisil/listing/rating_sme_listing_service.json?cmd=RR&start=0&limit=50"),
+    # ICRA (reCAPTCHA), CARE and India Ratings (script-loaded lists) have no open list; listed
+    # companies must file rating actions on BSE within 24h, so those reach us via BSE instead.
+    dict(name="icra_ratings", group="add2", market="IN", kind="html", disabled="reCAPTCHA; covered by BSE filings",
          url="https://www.icra.in/Rating/RatingList"),
-    dict(name="care_ratings", group="add2", market="IN", kind="html",
+    dict(name="care_ratings", group="add2", market="IN", kind="html", disabled="script-loaded list; covered by BSE filings",
          url="https://www.careratings.com/press-release"),
-    dict(name="indiaratings", group="add2", market="IN", kind="html",
+    dict(name="indiaratings", group="add2", market="IN", kind="html", disabled="script-loaded list; covered by BSE filings",
          url="https://www.indiaratings.co.in/pressReleases"),
 
     # ── India: news (corroboration) ─────────────────────────────────────────
