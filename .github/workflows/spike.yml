@@ -2,9 +2,7 @@ name: L0 source spike
 # Tests every source from a GitHub-hosted runner (US datacenter IP) — the place the scanner will run.
 on:
   workflow_dispatch: {}
-  schedule:
-    - cron: "15 5 * * 1-5"    # 10:45 IST, Indian market hours
-    - cron: "30 15 * * 1-5"   # 21:00 IST, US market hours
+  # L0 is done; run by hand when a source needs re-testing.
 permissions:
   contents: read
 jobs:

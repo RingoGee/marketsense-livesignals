@@ -21,3 +21,14 @@ On GitHub, `.github/workflows/spike.yml` runs the same test from GitHub's server
 
 Files: `sources.py` (source registry), `spike.py` (tester), `rss.py` (stdlib RSS/Atom parser,
 copied from MarketSense with extra Indian date formats).
+
+## L1 scanner
+`scan.py` polls the sources, maps items to tickers, dedups and writes JSON to a store folder.
+`scan.yml` runs it on a schedule and publishes the store to the `gh-pages` branch.
+
+```bash
+python scan.py --store store --all     # local run, every source
+```
+Outputs: `store/data/events.json`, `data/archive/*.jsonl`, `data/health.json`, `data/stats.json`.
+Secrets (`SEC_UA_EMAIL`, `FINNHUB_KEY`) are read from the environment only and never written.
+See PLAN-live-signals.md §16.

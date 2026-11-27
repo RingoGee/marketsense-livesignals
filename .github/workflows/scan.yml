@@ -1,0 +1,51 @@
+name: L1 scan
+# Polls the sources, maps items to tickers, dedups, and writes JSON to the gh-pages branch.
+# gh-pages is force-pushed as one rolling commit each run, so history never grows.
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "*/10 3-10 * * 1-5"    # every 10 min, 08:30–16:30 IST (India session)
+    - cron: "*/10 13-21 * * 1-5"   # every 10 min, 18:30–03:30 IST (US session)
+    - cron: "15,25 18 * * *"       # 23:45 / 23:55 IST: last BSE poll before its midnight reset
+    - cron: "5 * * * *"            # hourly otherwise, weekends included
+concurrency:
+  group: scan
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Load store from gh-pages
+        run: |
+          git clone --depth 1 --branch gh-pages "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" store \
+            || mkdir -p store
+          rm -rf store/.git
+      - name: Scan
+        env:
+          SEC_UA_EMAIL: ${{ secrets.SEC_UA_EMAIL }}
+          FINNHUB_KEY: ${{ secrets.FINNHUB_KEY }}
+        run: python scan.py --store store
+      - name: Stats in the run summary
+        run: |
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          python -c "import json;d=json.load(open('store/data/stats.json'));d.pop('per_source');print(json.dumps(d,indent=1))" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish store to gh-pages
+        run: |
+          cd store
+          touch .nojekyll
+          git init -q -b gh-pages
+          git config user.name "livesignals-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "scan $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" gh-pages

@@ -16,7 +16,7 @@ DEFAULT_TZ = timezone.utc
 # Extra formats seen on Indian feeds: BSE "26-Nov-2026 23:32:59", SEBI "26 Nov 2026 22:00:05 +0530"
 # and "26 Nov, 2026 +0530", RBI "Thu, 26 Nov 2026 19:25:00" (no zone, IST).
 _EXTRA_FORMATS = ["%d-%b-%Y %H:%M:%S", "%d %b %Y %H:%M:%S %z", "%d %b, %Y %z", "%d %b %Y %z",
-                  "%a, %d %b %Y %H:%M:%S", "%d-%b-%Y"]
+                  "%a, %d %b %Y %H:%M:%S", "%d-%b-%Y", "%a, %d %b %Y %H:%M:%S UT"]
 
 
 def _to_utc(dt):
@@ -70,7 +70,10 @@ def _parse_feed(content):
             link = link_el.get("href", "") if link_el is not None else ""
             summary = _text(entry.find(ATOM + "summary")) or _text(entry.find(ATOM + "content"))
             pub = _parse_date(_text(entry.find(ATOM + "published")) or _text(entry.find(ATOM + "updated")))
-            entries.append({"title": title, "link": link, "summary": summary, "published": pub})
+            cat = entry.find(ATOM + "category")
+            entries.append({"title": title, "link": link, "summary": summary, "published": pub,
+                            "guid": _text(entry.find(ATOM + "id")),
+                            "extra": {"category": cat.get("term", "") if cat is not None else ""}})
         return entries
 
     for item in root.findall(".//item"):
@@ -78,5 +81,11 @@ def _parse_feed(content):
         link = _text(item.find("link"))
         summary = _text(item.find("description"))
         pub = _parse_date(_text(item.find("pubDate")))
-        entries.append({"title": title, "link": link, "summary": summary, "published": pub})
+        extra = {}
+        for child in item:
+            tag = child.tag.rsplit("}", 1)[-1]
+            if tag not in ("title", "link", "description", "pubDate") and tag not in extra:
+                extra[tag] = _text(child)
+        entries.append({"title": title, "link": link, "summary": summary, "published": pub,
+                        "guid": extra.get("guid", ""), "extra": extra})
     return entries
