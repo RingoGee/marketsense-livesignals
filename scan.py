@@ -64,6 +64,10 @@ PLAN = {
 # EDGAR "current" feeds: ask for the most entries allowed per call so a busy 10 minutes isn't cut off.
 URL_OVERRIDE = {"edgar_8k": ("count=40", "count=100"), "edgar_form4": ("count=40", "count=100")}
 
+# Feeds where a CDN edge can keep serving a stale copy. On 27 Nov, GitHub's US runners got the
+# empty post-midnight BSE file 11 hours later, while an Indian connection got the live one.
+CACHE_BUST = {"bse_announcements_rss", "bse_notices_rss"}
+
 # BSE filings that never move a price; archived but kept off the dashboard.
 NOISE = re.compile(
     r"newspaper publication|trading window|loss of share certificate|duplicate share|"
@@ -85,7 +89,7 @@ def log(*a):
 def sessions():
     base = {"User-Agent": mp.UA_BROWSER, "Accept-Language": "en-US,en;q=0.9"}
     plain = requests.Session()
-    plain.headers.update(base)
+    plain.headers.update({**base, "Cache-Control": "no-cache", "Pragma": "no-cache"})
     contact = os.environ.get("SEC_UA_EMAIL", "").strip()
     sec = None
     if contact:
@@ -310,6 +314,8 @@ def fill_url(src):
     url = src["url"].format(FINNHUB_KEY=os.environ.get("FINNHUB_KEY", ""), ymd="", dmy="", dmy_="")
     if src["name"] in URL_OVERRIDE:
         url = url.replace(*URL_OVERRIDE[src["name"]])
+    if src["name"] in CACHE_BUST:
+        url += ("&" if "?" in url else "?") + f"_={int(time.time())}"
     return url
 
 
