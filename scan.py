@@ -388,8 +388,10 @@ def main():
             seen[ev["id"]] = ev["published"] or iso(now)
             fresh.append(ev)
             new += 1
-        h.update(status="ok" if items else "empty", items=len(items), new=new, newest=iso(newest), note="")
-        log(f"ok      {name:24} items={len(items):5} new={new:5} {lat}s")
+        note = "" if items else "0 items; body starts: " + re.sub(r"\s+", " ", r.text[:120])
+        h.update(status="ok" if items else "empty", items=len(items), new=new, newest=iso(newest),
+                 bytes=len(r.content), note=note)
+        log(f"{h['status']:7} {name:24} items={len(items):5} new={new:5} {lat}s {len(r.content)}B {note}")
         time.sleep(0.3)
 
     recent = [e for e in events if now - parse_iso(e["published"]) < timedelta(hours=36)]
