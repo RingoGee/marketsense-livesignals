@@ -13,6 +13,7 @@ The store is a plain folder (the gh-pages branch in CI):
     state/seen.json              dedup keys, kept 8 days
     state/signals.json           90-day ledger of scored events (feeds nscore.json)
     state/gemini.json            Gemini calls used today (free-tier cap)
+    state/runs.json              3 days of run times and triggers (stats.json → runs)
     ref/                         cached ticker reference lists
 
 L2: every new event gets a `cls` (classify.py); N is recomputed each run (nscore.py).
@@ -494,7 +495,8 @@ def main():
     stats = mapping_stats(arch, now)
     stats.update(run_utc=iso(now), new_this_run=len(fresh), events_48h=len(keep),
                  classification=class_stats(arch, now), gemini=dict(gstate, note=gnote),
-                 nscore_tickers=len(ns["tickers"]), ledger_rows=len(ledger))
+                 nscore_tickers=len(ns["tickers"]), ledger_rows=len(ledger),
+                 runs=run_log(store, now))
     write_json(store / "data/stats.json", stats)
     c24 = stats["classification"]
     log(f"classified 24h: {c24['classified_pct']}% of {c24['mapped_signal']} mapped items; "
@@ -503,6 +505,24 @@ def main():
         f"filings_unmapped_24h={stats['filings']['unmapped_pct']}% "
         f"(n={stats['filings']['total']})  news_with_ticker={stats['news']['mapped_pct']}%")
     return 0
+
+
+def run_log(store: Path, now):
+    """Record what started this run; report 24h delivery so a failing trigger shows up.
+    `workflow_dispatch` = the external cron (or a manual click), `schedule` = GitHub's own cron."""
+    p = store / "state/runs.json"
+    runs = load_json(p, [])
+    runs.append(dict(t=iso(now), ev=os.environ.get("GITHUB_EVENT_NAME", "local")))
+    runs = [r for r in runs if now - parse_iso(r["t"]) < timedelta(days=3)]
+    write_json(p, runs)
+    day = sorted(parse_iso(r["t"]) for r in runs if now - parse_iso(r["t"]) < timedelta(hours=24))
+    gaps = [round((b - a).total_seconds() / 60, 1) for a, b in zip(day, day[1:])]
+    by_ev = {}
+    for r in runs:
+        if now - parse_iso(r["t"]) < timedelta(hours=24):
+            by_ev[r["ev"]] = by_ev.get(r["ev"], 0) + 1
+    return dict(runs_24h=len(day), by_trigger=by_ev, max_gap_min=max(gaps) if gaps else None,
+                median_gap_min=sorted(gaps)[len(gaps) // 2] if gaps else None)
 
 
 def archive_events(arch: Path, days=3):
