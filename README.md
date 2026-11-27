@@ -66,3 +66,21 @@ every 10 minutes. The cron lines in `scan.yml` stay as a backup.
 **Check it works:** `data/stats.json` → `runs` on gh-pages shows runs in the last 24h, what
 started them (`workflow_dispatch` = this cron), and the largest gap in minutes. Expect ~144 runs
 and gaps of ~10 minutes.
+
+## L3 nightly scores
+`nightly.py` (workflow `nightly.yml`) scores every liquid stock once a day after 03:30 IST.
+`scan.yml` starts it when it's due, because GitHub's own cron is unreliable here.
+- **Universe:** the Yahoo screener, paged by region and sector (~40s). Liquid means a 3-month average
+  traded value ≥ ₹5 Cr or $5M. One ticker per company (NSE preferred over BSE). No US OTC.
+- **M (momentum):** 52-week change, distance from the 200- and 50-day averages, and position in the
+  52-week range, ranked within the market → −100…+100. `vol_ratio` = 10-day ÷ 3-month volume.
+- **F (fundamentals):** value (earnings, book and FCF yield), quality (ROE, operating margin, low
+  debt) and growth (revenue, earnings, forward EPS), each ranked within market × sector. A missing
+  metric is skipped. Banks skip debt and margin. `F_partial` = no quality data yet.
+- **Fundamentals cache:** `ref/fundamentals.json` from yfinance `.info`, up to 750 stocks a night,
+  stopping if Yahoo throttles. Each stock refreshes about weekly.
+- **Flows:** `data/flows.json`, NSDL FPI daily equity net and a 5-day mood (India swing weighting).
+- **Outputs:** `data/scores.json`, `data/snapshots/<IST date>.json` (F, M, price; 400 days).
+
+`publish.sh` keeps `gh-pages` one rolling commit shared by both jobs. It pushes with
+`--force-with-lease` and retries, and the scan always keeps the nightly files from the published copy.
